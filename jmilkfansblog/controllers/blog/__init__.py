@@ -7,12 +7,12 @@ from flask import render_template, redirect, Blueprint, url_for
 from flask import session, abort, request
 from flask.ext.login import login_required, current_user
 from flask.ext.principal import Permission, UserNeed
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from jmilkfansblog.db.sqlalchemy.models import db, User, Post, Tag
 from jmilkfansblog.db.sqlalchemy.models import Comment, posts_tags
 from jmilkfansblog.forms import CommentForm, PostForm
-from jmilkfansblog.extensions import poster_permission, admin_permission, cache
+from jmilkfansblog.extensions import poster_permission, admin_permission,poster_or_admin_permission, cache
 from jmilkfansblog.i18n import _LI
 
 
@@ -51,7 +51,7 @@ def sidebar_data():
             Tag, func.count(posts_tags.c.post_id).label('total')
         ).join(
             posts_tags
-        ).group_by(Tag).order_by('total DESC').limit(5).all()
+                ).group_by(Tag).order_by(text('total DESC')).limit(5).all()
     return recent, top_tags
 
 
@@ -144,6 +144,8 @@ def user(username):
 @login_required
 def new_post():
     """View function for new_port."""
+    if not poster_or_admin_permission.can():
+        abort(403)
 
     form = PostForm()
 
@@ -170,46 +172,35 @@ def new_post():
 
 @blog_blueprint.route('/edit/<string:id>', methods=['GET', 'POST'])
 @login_required
-@admin_permission.require(http_exception=403)
 def edit_post(id):
-    """View function for edit_post."""
+    """View function for edit_post.
 
-    post = Post.query.get_or_404(id)
+    Allowed: the post's author, or an admin. Everyone else gets 403.
+    """
 
-    # Ensure the user logged in.
-    if not current_user:
-        return redirect(url_for('main.login'))
+    post = Post.query.get_or_404(id)          # 1. load the post first
 
-    # Only the post onwer can be edit this post.
-    if current_user != post.user:
-        return redirect(url_for('blog.post', post_id=id))
-
-    # Admin can be edit the post.
-    permission = Permission(UserNeed(post.user.id))
-    if permission.can() or admin_permission.can():
-        form = PostForm()
-
-        # if current_user != post.user:
-        #    abort(403)
-
-        if form.validate_on_submit():
-            post.title = form.title.data
-            post.text = form.text.data
-            post.publish_date = datetime.now()
-
-            # Update the post
-            db.session.add(post)
-            db.session.commit()
-
-            return redirect(url_for('blog.post', post_id=post.id))
-    else:
+    # >>> YOUR TWO LINES GO HERE <<<            # 2. then check permission
+    owner_permission = Permission(UserNeed(post.user_id))
+    if not (owner_permission.can() or admin_permission.can()):
         abort(403)
 
-    # Still retain the original content, if validate is false.
+    form = PostForm()                          # 3. the rest runs only if allowed
+
+    if form.validate_on_submit():
+        post.title = form.title.data
+        post.text = form.text.data
+        post.publish_date = datetime.now()
+
+        db.session.add(post)
+        db.session.commit()
+
+        return redirect(url_for('blog.post', post_id=post.id))
+
+    # Pre-fill the form with the current content on a GET request.
     form.title.data = post.title
     form.text.data = post.text
     return render_template('edit_post.html', form=form, post=post)
-
 
 # NOTE(Jmilk Fan): Use the Flask-Login's current_user object to replace
 #                  g.current_user
