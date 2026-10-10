@@ -1,288 +1,211 @@
-# Blog Web Application base on Python-Flask framework
+# JmilkFan's Blog (Flask) - Python 3 / Windows / MySQL 8 port with extensions
 
-开发笔记与文档：[《用 Flask 来写个轻博客》](https://blog.csdn.net/jmilk/category_9631002.html)
+This is a fork of [JmilkFan/blog-web-application](https://github.com/JmilkFan/blog-web-application),
+a Flask blog with login, posts, comments, roles and a REST API.
 
+The original project was written in 2016-17. This fork:
 
-## Installation
+1. **Runs on Python 3.8, Windows and MySQL 8** (see *Compatibility fixes*).
+2. **Adds new features** for the assignment (see *My changes*).
 
-- **Step 1**: clone the source code from GitHub
-```
-git clone https://github.com/JmilkFan/JmilkFan-s-Blog.git
+---
 
-cd JmilkFan-s-Blog
-```
+## Quick start (Windows)
 
-- **Step 2**: building and using virtual environment via tools of `virtualenv`
-```
-virtualenv blog_env
+Requirements: Python 3.8, MySQL 8, Git.
 
-source blog_env/bin/activate
-```
-
-- **Step 3**: Install the requirements package
-```
-pip install -r requirements.txt -e .
-```
-
-## Start service
-
-- **Srep 1**: Create the DB for app of jmilkfansblog, e.g.
-```
-mysql -uroot -pfanguiju -e "CREATE DATABASE myblog default charset utf8 COLLATE utf8_general_ci;"
-mysql -uroot -pfanguiju -e "GRANT ALL ON egis.* TO 'user'@'127.0.0.1' IDENTIFIED BY 'fanguiju';"
-mysql -uroot -pfanguiju -e "GRANT ALL ON egis.* TO 'user'@'localhost' IDENTIFIED BY 'fanguiju';"
-mysql -uroot -pfanguiju -e "GRANT ALL ON egis.* TO 'user'@'%' IDENTIFIED BY 'fanguiju';"
+```bat
+git clone <your-fork-url>
+cd blog-web-application
+py -3.8 -m venv blog_env
+blog_env\Scripts\activate
+python -m pip install "pip<24.1" "setuptools<58" wheel
+pip install -r requirements.txt
+pip install -e . --no-deps
 ```
 
-- **Step 2**: Setup the Configuration.<br>
-Edit the config option `connection` for etc file `etc/jmilkfansblog.conf` e.g.
-```
-connection = 'mysql+pymysql://root:fanguiju@127.0.0.1:3306/myblog?charset=utf8'
+> `pip<24.1` is needed because Celery 4.0.1 has old-style package metadata
+> that newer pip versions reject.
+
+### Database
+
+Create the database with the **utf8mb4** character set (needed for emoji in posts):
+
+```sql
+CREATE DATABASE myblog CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-Edit the config option `host`/`server_port`/`api_port`. e.g.
-```
-host = '127.0.0.1'
-server_port = 8089
-api_port = 8080
+### Configuration
+
+```bat
+copy etc\jmilkfansblog.conf.example etc\jmilkfansblog.conf
 ```
 
-- **Step 3**: Init the database
-```
+Edit `etc\jmilkfansblog.conf`:
+
+* `connection` - your MySQL user and password. If the password contains `@`,
+  write it as `%40`. End the URL with `?charset=utf8mb4`.
+* `recaptcha_*` - not used locally (reCAPTCHA is disabled, see *Known limitations*).
+* `token_expires_in` - optional, API token lifetime in seconds (default 600).
+
+`etc\jmilkfansblog.conf` is in `.gitignore` because it contains secrets.
+
+### Create the tables and roles
+
+```bat
 jmilkfansblog-manager db upgrade -d jmilkfansblog/db/sqlalchemy/alembic
 ```
 
-- **Step 4**: Start the service
+```sql
+USE myblog;
+INSERT INTO roles (id, name, description) VALUES
+  (UUID(), 'default', 'Default user role'),
+  (UUID(), 'poster',  'Can create and edit own posts'),
+  (UUID(), 'admin',   'Administrator');
 ```
+
+### Run
+
+```bat
 jmilkfansblog-manager server
 ```
 
-- **Step 5**: Start the API service
+The site and the REST API are served at <http://127.0.0.1:8080>
+(blog home: `/blog/`, register: `/register`, login: `/login`).
+
+The first admin has to be created in the database, because only an admin can
+grant roles through the API:
+
+```sql
+INSERT INTO users_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u, roles r
+WHERE u.username = 'YOUR_USERNAME' AND r.name IN ('poster', 'admin');
 ```
-jmilkfansblog-api
+
+---
+
+## My changes
+
+### 1. Role-based access (web pages)
+
+The original code had two contradictory checks on `/blog/edit/<id>` (admins only,
+*and* author only), so normal authors could never edit their own posts, and the
+`poster` role was never checked anywhere.
+
+| Role | Create post | Edit own post | Edit someone else's post |
+|------|:-----------:|:-------------:|:------------------------:|
+| `default` | 403 | - | 403 |
+| `poster`  | yes | yes | 403 |
+| `admin`   | yes | yes | yes |
+
+* `extensions.py`: new `poster_or_admin_permission` (a Flask-Principal
+  `Permission` with two `RoleNeed`s; any one matching need is enough).
+* `controllers/blog/__init__.py`: `new_post` requires it; `edit_post` allows the
+  post's author (`UserNeed(post.user_id)`) or an admin, and returns 403 otherwise.
+
+### 2. New API: manage user roles (admin only)
+
+| Request | Description |
+|---------|-------------|
+| `GET /api/users/<username>/roles` | List the user's roles |
+| `PUT /api/users/<username>/roles` | Replace the user's roles |
+
+```bat
+curl -X PUT http://127.0.0.1:8080/api/users/ki/roles ^
+  -H "Authorization: Bearer <admin token>" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"roles\":[\"default\",\"poster\"]}"
 ```
 
-- **Step 6**: Register the account(Have to access the google reCAPTCHA).
+| Status | Meaning |
+|--------|---------|
+| 200 | Success, returns `{"username": ..., "roles": [...]}` |
+| 400 | `roles` is not a list, an unknown role name, or an admin tried to remove their own `admin` role |
+| 401 | Missing, invalid or expired token |
+| 403 | Valid token, but the user is not an admin |
+| 404 | No such user |
+
+Design notes:
+
+* Every user always keeps the `default` role.
+* An admin cannot remove their own `admin` role (prevents locking everyone out).
+* The role check uses the user object from the token, not Flask-Principal's
+  `admin_permission.can()`, because that reads the browser session and an API
+  request has no session.
+
+Code: `controllers/flask_restful/users.py`.
+
+### 3. Token handling
+
+* **`Authorization: Bearer <token>` header** is now accepted. The old `token`
+  field in the JSON body still works. Shared helper:
+  `controllers/flask_restful/token_auth.py` (`authenticated_user()`).
+* **Refresh endpoint:** `POST /api/auth/refresh` with a still-valid token returns
+  a new token with a fresh expiry.
+* **Configurable lifetime:** `token_expires_in` in the config file
+  (default 600 seconds). Login and refresh responses include `expires_in`.
+* **Bug fixes:** the token was `bytes` on Python 3 and could not be sent as JSON;
+  an unknown username crashed with a 500 instead of returning 401.
+
+```bat
+curl -X POST http://127.0.0.1:8080/api/auth ^
+  -H "Content-Type: application/json" ^
+  -d "{\"username\":\"Danny\",\"password\":\"...\"}"
 ```
-http://127.0.0.1:8088/register
+
+Response: `{"token": "...", "expires_in": 600}`
+
+### 4. Other fixes
+
+* Posts created through the API had no `publish_date` (the code set a
+  non-existent `date` attribute), which broke ordering.
+* `HTMLStripper` did not call its parent constructor, which crashed
+  `GET /api/posts` on Python 3.
+
+---
+
+## Tests
+
+```bat
+python -m unittest test_api -v
 ```
 
-## Issue
-1. ERROR: `Command "python setup.py egg_info" failed with error code 1`
-if you meet this error when you installing the dependency packet from requirements file.
-Plase check whether installed the MySQL, because the package PyMySQL will be depend on it.
+15 tests for login, refresh, the roles API, status codes and the `publish_date`
+fix. They run against an in-memory SQLite database, so MySQL is not touched.
 
+---
 
-## Change Log
-============== 2016-11-13 =============<br>
-1. First commit <br>
-2. Completed development environment configuration<br>
-3. Created the base application<br>
-4. Installed the Flask extend: Flask-Script CLI<br>
-5. Installed the Flask extend: Flask-SQLAlchemy<br>
-6. Connect the MySQL with SQLAlchemy
+## Compatibility fixes (Python 2 era code on Python 3.8 / Windows / MySQL 8)
 
-============== 2016-11-16 =============<br>
-1. Created the database myblog<br>
-2. Implements models class User<br>
+| Problem | Fix |
+|---------|-----|
+| Old packages needed a C compiler (cffi, bcrypt, netifaces, ...) | Newer versions that ship Windows wheels |
+| Python 2-only packages (`futures`, `flower`, `tornado`, `python-openid`) | Removed or replaced by `python3-openid` |
+| `time.clock` removed in 3.8 | SQLAlchemy 1.3.24, Flask-SQLAlchemy 2.5.1, and a `sitecustomize.py` shim in the venv for old libraries |
+| `async` is a reserved word (Celery 4.0.1 / kombu) | Celery 4.4.7 |
+| `ForkingMixIn` missing on Windows (Werkzeug 0.11) | Werkzeug 0.16.1 |
+| `sqlparse` generator error in the debug toolbar | sqlparse 0.4.4 |
+| Python 2 syntax: `reload(sys)`, `except X, e`, `HTMLParser`, `unicode()` | Ported to Python 3 |
+| Flask-OAuth is Python 2 only | Facebook/Twitter login disabled with stand-in objects in `extensions.py` |
+| PyMySQL 0.7.9 crashes on the MySQL 8 handshake (`KeyError: 255`) | PyMySQL 0.9.3 + `cryptography` |
+| `%` in the DB URL breaks Alembic's config parser | Escaped as `%%` in `alembic/env.py` |
+| MySQL `utf8` cannot store emoji | `utf8mb4` for the database, tables and connection string |
+| `order_by('total DESC')` rejected by SQLAlchemy 1.3 | Wrapped in `text()` |
 
-============== 2016-11-19 =============<br>
-1. Implements models class Post<br>
+---
 
-============== 2016-11-20 =============<br>
-1. Implements models class Comment<br>
-2. Implements models class Tag<br>
-3. Installed the Flask extend: Flask-Migrate
+## Known limitations and future work
 
-============== 2016-11-23 =============<br>
-1. Added the file views.py<br>
-2. Created the view function for tables<br>
-3. Installed the Bootstrap<br>
-4. Implements the HTML base template of Jinja<br>
-5. Implements the macro: render pagination<br>
-6. Fix the bug from base.html
-
-============== 2016-11-24 =============<br>
-1. Implements the template for view function: `home()`<br>
-2. Installed the Flask-WTF<br>
-3. Implements the Form class: `CommentForm`<br>
-
-============== 2016-11-24 =============<br>
-1. Fix the bug for pagination linked<br>
-2. Implements template: `post.html`<br>
-3. Add the Form class CommentForm() into view function: `post()`<br>
-
-============== 2016-11-26 =============<br>
-1. Add the template: `page_not_fount.html`<br>
-2. Implements the Blueprint: `blog`<br>
-3. Reconstruction project code<br>
-
-============== 2016-11-27 =============<br>
-1. Using the Factory Method to create app instance<br>
-2. Installed the Flask-Bcrypt<br>
-3. Using the Flask-Bcrypt to encipher the password<br>
-4. Using reCAPTCHA<br>
-5. Implements Login and Register Forms<br>
-
-============== 2016-11-28 =============<br>
-1. Fix the bug for reCAPTCHA<br>
-2. Implements view function login/logout/register<br>
-3. Implements template: `login.html`<br>
-
-============== 2016-11-29 =============<br>
-1. Implements the template: `register.html`
-
-============== 2016-11-30 =============<br>
-1. Implements the View function: new_post/edit_post<br>
-2. Implements the template: new.html/edit.html<br>
-3. Fix the bug for edit and new the post<br>
-
-============== 2016-12-02 =============<br>
-1. Fix the bug for controller: `blog.py`<br>
-
-============== 2016-12-03 =============<br>
-1. Fix the bug for login/register/net_post/edit_post<br>
-
-============== 2016-12-04 =============<br>
-1. Installed the Flask-OpenID<br>
-2. Implements use the OpenID to login the blog<br>
-3. Installed the Flask-Oauth<br>
-4. Implements use the Facebook and Twitter to login the blog<br>
-5. Installed the Flask-Login<br>
-6. Installed the Flask-Principal<br>
-7. Using the session to confirm the uses login status<br>
-8. Add the table: `users_roles` and `roles`<br>
-9. Using the Flask-Principal to implements the role permission<br>
-10. Using the Flask-Login to implements the ensure the user login status<br>
-
-============== 2016-12-05 =============<br>
-1. Fix some bug for Flask-Principal<br>
-
-============== 2016-12-06 =============<br>
-2. Add the Remember Me optional box<br>
-
-============== 2016-12-08 =============<br>
-1. Add the Script plug-in with duoshuo-comment<br>
-2. Add the Script plug-in with duoshuo-share<br>
-
-============== 2016-12-09 =============<br>
-1. Fix some bug for Flask-Principal<br>
-
-============== 2016-12-10 =============<br>
-1. Installed the Flask-Restful<br>
-2. Implements restful api `GET` for /api/posts<br>
-3. Implements restful api `POST` for /api/posts<br>
-4. Implements restful api `PUT` for /api/posts/post_id<br>
-5. Implements restful api `DELETE` for /api/posts/post_id<br>
-6. Implements restful api `POST` for /api/auth<br>
-
-============== 2016-12-11 =============<br>
-1. Added the database migrate version: `Init database`<br>
-2. Added the table `browse_volumes`<br>
-3. Added the database migrate version: `Add table of browse_volumes`<br>
-4. Fix some bug<br>
-5. Installed Celery and Flask-Celery-Helper<br>
-
-============== 2016-12-12 =============<br>
-1. Implements the celery_runner(Celery worker)<br>
-
-============== 2016-12-13 =============<br>
-1. Installed flower<br>
-2. Setup the timed task<br>
-3. Add table `reminders`<br>
-4. Implements Remind when registered the user<br>
-5. Implements weekly digest<br>
-
-============== 2016-12-14 =============<br>
-1. Implements email content of weekly-digest `digest.html`<br>
-2. Installed Flask-Debug-Toolbar<br>
-3. Installed Flask-Cache<br>
-4. Installed Flask-Redis<br>
-5. Implements make cache for `post.html/home.html` and function `verify_auth_token`<br>
-6. Using Redis as BackEndStieCache<br>
-7. Installed Flask-Assets<br>
-8. Installed Flask-Admin<br>
-9. Implements the Post-Admin page via Flask-Admin<br>
-10. Implements access File System via Flask-Admin<br>
-11. Installed Flask-Mail<br>
-
-============== 2016-12-15 =============<br>
-1. Fix some bug<br>
-
-============== 2016-12-16 =============<br>
-1. Fix some bug<br>
-
-============== 2016-12-17 =============<br>
-1. Fix some bug for Flask-Admin<br>
-2. Replace the property of Post Model: `users` to `user`<br>
-
-============== 2016-12-18 =============<br>
-1. Create a new manager command `assset`<br>
-2. Pack up the static file<br>
-3. Fix the bug for UnicodeEncodeError<br>
-
-============== 2016-12-19 =============<br>
-1. Implements Flask-Youku extension<br>
-2. Implements Flask-GZip extension<br>
-
-============== 2016-12-20 =============<br>
-1. Packup the extensions Flask-Youku and Flask-GZip<br>
-
-============== 2016-12-21 =============<br>
-1. Installed selenium<br>
-2. Installed coverage<br>
-3. Implements Unit test `TestURLs`<br>
-4. Fix some bug<br>
-
-============== 2016-12-24 =============<br>
-1. Fix some bug for flask_youku<br>
-2. Installed oslo_config<br>
-3. Using oslo_config to setup the config<br>
-
-
-============== tag 0.0.1 Done to Python-Flask =============<br>
-
-
-============== 2016-12-26 =============<br>
-1. Fix the bug for oslo_config<br>
-2. Implements setup.cfg and setup.py<br>
-3. Tag 0.0.1 Done to Python-Flask<br>
-4. Source archive v0.0.1<br>
-
-============== 2016-12-27 =============<br>
-1. Installed Pecan<br>
-2. Implements Restful api `v1/users` via Pecan<br>
-3. Create the db directory<br>
-4. Create the api directory for Pecan RESTful API<br>
-
-============== 2016-12-28 =============<br>
-1. Implements RESTful API `v1/posts` via Pecan<br>
-
-============== 2016-12-30 =============<br>
-1. Installed oslo_db<br>
-2. Using oslo_db.sqlalchemy.session.EngineFacahe to create the session<br>
-3. Using oslo_db.concurrency to wrapper the operation of database<br>
-
-============== 2017-01-02 =============<br>
-1. Fix the bug for Flask-Admin<br>
-2. Return post_id when response the flask_restful api `/posts` GET<br>
-
-============== 2017-01-04 =============<br>
-1. Implements the GET `v1/posts` via pecan RESTful<br>
-
-============== 2017-01-05 =============<br>
-1. Installed oslo_i18n<br>
-2. Try to use the oslo_log and oslo_config<br>
-
-============== 2017-01-08 =============<br>
-1. Fix some bug<br>
-2. Implements console-script via setup.cfg<br>
-
-============== 2017-01-09 =============<br>
-1. Fix the bug for db.api.CONF<br>
-
-============== 2017-03-31 =============<br>
-1. Test the oslo_config<br>
-
-============== 2017-04-03 =============<br>
-1. Fix the oslo_log and jinja syntax bug<br>
+* **Tokens cannot be revoked.** They are stateless, so a refreshed token does not
+  invalidate the old one; it simply expires. Real revocation needs a stored
+  blacklist (e.g. in Redis).
+* **Local development shortcuts:** reCAPTCHA is turned off on the register form;
+  Facebook, Twitter and OpenID login are not functional; Celery/RabbitMQ is not
+  required (reminder and digest emails will not be sent).
+* **Security issues in the original code (not fixed here):**
+  * A Facebook app key and secret are hardcoded in `extensions.py`.
+  * Users created through OpenID or Facebook get the fixed password `jmilkfan`.
+  * `GET /v1/users` on the separate Pecan API returns password hashes.
+  * The Pecan API (`jmilkfansblog-api`, `controllers/v1/`) still contains Python 2
+    code (`print user`) and was not ported or tested.
+* The `downgrade()` of the `reminders` migration has a typo (`reminbers`).
