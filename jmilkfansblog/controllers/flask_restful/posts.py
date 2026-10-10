@@ -5,6 +5,7 @@ from flask import abort
 from jmilkfansblog.db.sqlalchemy.models import db, User, Post, Tag
 from jmilkfansblog.controllers.flask_restful import fields as jf_fields
 from jmilkfansblog.controllers.flask_restful import parsers
+from jmilkfansblog.controllers.flask_restful.token_auth import authenticated_user
 
 
 # String format output of tag
@@ -67,13 +68,11 @@ class PostApi(Resource):
             # Validate the user identity via token(/api/auth POST).
             # Will be create the post(/api/posts POST),
             # if pass with validate token.
-            user = User.verify_auth_token(args['token'])
-            if not user:
-                abort(401)
+            user = authenticated_user()
 
             new_post = Post()
             new_post.title = args['title']
-            new_post.date = datetime.datetime.now()
+            new_post.publish_date = datetime.datetime.now()
             new_post.text = args['text']
             new_post.user = user
 

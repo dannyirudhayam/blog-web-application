@@ -41,7 +41,7 @@ post_post_parser.add_argument(
 post_post_parser.add_argument(
     'token',
     type=str,
-    required=True,
+    required=False,
     help='Auth Token is required to create posts.')
 
 post_put_parser.add_argument(
@@ -60,13 +60,13 @@ post_put_parser.add_argument(
 post_put_parser.add_argument(
     'token',
     type=str,
-    required=True,
+    required=False,
     help='Auth Token is required to update the posts.')
 
 post_delete_parser.add_argument(
     'token',
     type=str,
-    required=True,
+    required=False,
     help='Auth Token is required to update the posts.')
 
 ########################################################

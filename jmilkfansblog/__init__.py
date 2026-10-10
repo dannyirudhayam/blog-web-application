@@ -14,6 +14,8 @@ from jmilkfansblog.controllers import blog
 from jmilkfansblog.controllers import account
 from jmilkfansblog.controllers.flask_restful.posts import PostApi
 from jmilkfansblog.controllers.flask_restful.auth import AuthApi
+from jmilkfansblog.controllers.flask_restful.auth import TokenRefreshApi
+from jmilkfansblog.controllers.flask_restful.users import UserRolesApi
 from jmilkfansblog.extensions import bcrypt, openid, login_manager
 from jmilkfansblog.extensions import principals, flask_celery
 from jmilkfansblog.extensions import restful_api, debug_toolbar
@@ -74,6 +76,15 @@ def create_app(object_name):
         AuthApi,
         '/api/auth',
         endpoint='restful_api_auth')
+    restful_api.add_resource(
+        UserRolesApi,
+        '/api/users/<string:username>/roles',
+        endpoint='restful_api_user_roles')
+    restful_api.add_resource(
+        TokenRefreshApi,
+        '/api/auth/refresh',
+        endpoint='restful_api_auth_refresh')
+
     restful_api.init_app(app)
 
     # Init the Flask-DebugToolbar via app object
@@ -138,3 +149,4 @@ def create_app(object_name):
     app.register_blueprint(account.main_blueprint)
 
     return app
+

@@ -21,6 +21,14 @@ DEFAULT_OPTS = [
 
     cfg.StrOpt('recaptcha_private_key',
                help="Google reCaptche private key."),
+
+    cfg.StrOpt('recaptcha_private_key',
+               help="Google reCaptche private key."),
+
+    cfg.IntOpt('token_expires_in',
+               default=600,
+               help="Lifetime of an API token, in seconds."),
+
 ]
 
 DATABASE_GROUP = cfg.OptGroup(name='database')
@@ -126,6 +134,9 @@ class Config(object):
     """Application config."""
 
     DEBUG = CONF.debug
+
+    # API token lifetime in seconds
+    TOKEN_EXPIRES_IN = CONF.token_expires_in
 
     # reCAPTCHA Public key and Private key
     RECAPTCHA_PUBLIC_KEY = CONF.recaptcha_public_key
