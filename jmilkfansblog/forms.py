@@ -63,7 +63,7 @@ class RegisterForm(Form):
     password = PasswordField('Password', [DataRequired(), Length(min=8)])
     comfirm = PasswordField('Confirm Password',
                             [DataRequired(), EqualTo('password')])
-    recaptcha = RecaptchaField()
+    # recaptcha = RecaptchaField()
 
     def validate(self):
         check_validate = super(RegisterForm, self).validate()

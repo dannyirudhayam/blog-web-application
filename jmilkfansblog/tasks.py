@@ -74,5 +74,5 @@ def digest(self):
             msg.as_string())
         smtp_server.close()
         return
-    except Exception, err:
+    except Exception as err:
         self.retry(exc=err)

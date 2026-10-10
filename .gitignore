@@ -1,5 +1,7 @@
 blog_env/
+etc/jmilkfansblog.conf
+jmilkfansblog.egg-info/
+__pycache__/
 *.pyc
-.ropeproject/
-.eggs/
-.coverage
+diag.py
+check_login.py.eggs/

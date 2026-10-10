@@ -10,8 +10,8 @@ api_port = 8088
 ################
 # Google reCaptcha
 ################
-recaptcha_public_key = "6LdBbA0UAAAAAFfpWX5fubCe8wwMp4MrjOyNqFfO"
-recaptcha_private_key = "6LdBbA0UAAAAABzQiANZIyCAjc4Rg6JiuQkWx6pr"
+recaptcha_public_key = "YOUR_KEY"
+recaptcha_private_key = "YOUR_KEY"
 
 ################
 # oslo.log
@@ -112,12 +112,12 @@ debug = True
 
 [database]
 backend = 'sqlalchemy'
-connection = 'mysql+pymysql://root:fanguiju@127.0.0.1:3306/myblog?charset=utf8'
+connection = 'mysql+pymysql://root:YOUR_PASSWORD@127.0.0.1:3306/myblog?charset=utf8mb4'
 
 [flask_wtform]
 
 # Secret key of Flask-WTF.
-SECRET_KEY = "c8e6ff3e4687709ca10a1138a17cd397"
+SECRET_KEY = "CHANGE_ME"
 
 # Enable the CSRF check for Flask-WTF, should not set 'False' when run the unit
 # testting.

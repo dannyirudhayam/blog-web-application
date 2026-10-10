@@ -18,8 +18,9 @@ from jmilkfansblog.extensions import bcrypt, cache
 # A: System will be deleted the sys.setdefaultencoding after imported the
 #    site.py. So, we have to reload the sys module and reset the default
 #    encoding again
-reload(sys)
-sys.setdefaultencoding("utf-8")
+import sys
+#reload(sys)
+#sys.setdefaultencoding("utf-8")
 
 # Create the db object
 # Init the db from jmilkfansblog/__init__py
@@ -90,7 +91,7 @@ class User(db.Model):
         else:
             return True
 
-    def is_active():
+    def is_active(self):
         """Check the user whether pass the activation process."""
 
         return True
@@ -106,7 +107,7 @@ class User(db.Model):
     def get_id(self):
         """Get the user's uuid from database."""
 
-        return unicode(self.id)
+        return str(self.id)
 
     @staticmethod
     @cache.memoize(60)

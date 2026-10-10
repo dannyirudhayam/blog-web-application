@@ -1,7 +1,7 @@
 from flask import session, flash, redirect, url_for
 from flask.ext.bcrypt import Bcrypt
 from flask.ext.openid import OpenID
-from flask_oauth import OAuth
+# from flask_oauth import OAuth   # disabled: Flask-OAuth is Python 2 only
 from flask.ext.login import LoginManager
 from flask.ext.principal import Principal, Permission, RoleNeed
 from flask.ext.restful import Api
@@ -61,6 +61,7 @@ login_manager = LoginManager()
 # Init the permission object via RoleNeed(Need).
 admin_permission = Permission(RoleNeed('admin'))
 poster_permission = Permission(RoleNeed('poster'))
+poster_or_admin_permission = Permission(RoleNeed('poster'), RoleNeed('admin'))
 default_permission = Permission(RoleNeed('default'))
 # Setup the configuration for login manager.
 #     1. Set the login page.
@@ -74,7 +75,32 @@ login_manager.login_message_category = "info"
 # login_manager.anonymous_user = CustomAnonymousUser
 
 # Create the Flask-OAuth's instance
-oauth = OAuth()
+class _DisabledRemoteApp(object):
+    """Stand-in for a Flask-OAuth remote app (Python 2 only library)."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def tokengetter(self, f):
+        return f
+
+    def authorized_handler(self, f):
+        return f
+
+    def authorize(self, *args, **kwargs):
+        flash('%s login is disabled.' % self.name.title(), 'warning')
+        return redirect(url_for('main.login'))
+
+    def get(self, *args, **kwargs):
+        return None
+
+
+class _DisabledOAuth(object):
+    def remote_app(self, name, **kwargs):
+        return _DisabledRemoteApp(name)
+
+
+oauth = _DisabledOAuth()
 # Create the auth object for facebook.
 facebook = oauth.remote_app(
     'facebook',
