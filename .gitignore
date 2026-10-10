@@ -4,4 +4,5 @@ jmilkfansblog.egg-info/
 __pycache__/
 *.pyc
 diag.py
-check_login.py.eggs/
+check_login.py
+.eggs/
